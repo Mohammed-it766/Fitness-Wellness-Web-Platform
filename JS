@@ -1,0 +1,715 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+// ── Design Tokens ─────────────────────────────────────────────────────────────
+const T = {
+  lime:    "#C8F135",
+  dark:    "#0A0A0A",
+  card:    "#141414",
+  card2:   "#1C1C1C",
+  border:  "#252525",
+  muted:   "#666",
+  text:    "#F0EEE8",
+  accent:  "#FF4D1C",
+  blue:    "#3D8EFF",
+  purple:  "#A855F7",
+  font:    "'Syne', 'Barlow Condensed', sans-serif",
+  body:    "'DM Sans', system-ui, sans-serif",
+};
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+const USER = { name: "Alex", streak: 14, week: 6, phase: "Strength Phase" };
+
+const STATS = {
+  calories: 2847, calTarget: 3200, goalPct: 74,
+  activeMin: 47, steps: 8214, hr: 62, sleep: 7.4,
+};
+
+const MACROS = [
+  { name: "Protein", current: 164, target: 200, color: T.lime   },
+  { name: "Carbs",   current: 218, target: 280, color: T.blue   },
+  { name: "Fat",     current: 64,  target: 90,  color: T.accent },
+  { name: "Fiber",   current: 22,  target: 35,  color: T.purple },
+];
+
+const PROGRAMS = [
+  { id:1, name:"Power Hypertrophy", icon:"💪", day:18, total:30, freq:"4×/week", color:T.lime,   bg:"#111800", status:"active",    featured:true  },
+  { id:2, name:"Mobility & Flex",   icon:"🧘", day:5,  total:21, freq:"Daily",   color:T.blue,   bg:"#001218", status:"active",    featured:false },
+  { id:3, name:"Sprint & Cardio",   icon:"🏃", day:12, total:28, freq:"3×/week", color:T.accent, bg:"#140800", status:"active",    featured:false },
+  { id:4, name:"Core Foundation",   icon:"🏋️", day:30, total:30, freq:"5×/week", color:T.purple, bg:"#100818", status:"completed", featured:false },
+];
+
+const MEALS_INIT = [
+  { id:1, icon:"🥣", name:"Protein Oat Bowl",      time:"7:30 AM",  meal:"Breakfast", cal:487 },
+  { id:2, icon:"🥗", name:"Grilled Chicken Salad", time:"12:15 PM", meal:"Lunch",     cal:612 },
+  { id:3, icon:"🍫", name:"Whey Protein Shake",    time:"3:00 PM",  meal:"Snack",     cal:210 },
+];
+
+const MEAL_SUGGESTIONS = [
+  { icon:"🍣", name:"Salmon & Rice Bowl",       time:"7:00 PM", meal:"Dinner", cal:680 },
+  { icon:"🌯", name:"Turkey Wrap",              time:"6:30 PM", meal:"Dinner", cal:520 },
+  { icon:"🫐", name:"Greek Yogurt + Berries",   time:"5:00 PM", meal:"Snack",  cal:180 },
+  { icon:"🥩", name:"Steak & Sweet Potato",     time:"7:30 PM", meal:"Dinner", cal:720 },
+];
+
+const WEEK = [
+  { day:"Mon", num:28, events:0 },
+  { day:"Tue", num:29, events:1 },
+  { day:"Wed", num:30, events:2 },
+  { day:"Thu", num:1,  events:4 },
+  { day:"Fri", num:2,  events:1 },
+  { day:"Sat", num:3,  events:0 },
+  { day:"Sun", num:4,  events:0 },
+];
+
+const SCHEDULE = {
+  Mon: [
+    { time:"7:00 AM",  title:"Back & Biceps",         sub:"Hypertrophy B · Day 15", dur:"60 min", color:T.accent },
+    { time:"8:00 PM",  title:"Evening Mobility",       sub:"Hip flexor focus",        dur:"20 min", color:T.lime   },
+  ],
+  Tue: [
+    { time:"6:30 AM",  title:"Sprint Intervals",       sub:"Sprint & Cardio · Day 10", dur:"35 min", color:T.accent },
+    { time:"12:00 PM", title:"Midday Walk",             sub:"Zone 2 recovery",          dur:"30 min", color:T.blue   },
+  ],
+  Wed: [
+    { time:"6:00 AM",  title:"Legs & Glutes",          sub:"Hypertrophy · Day 16",     dur:"65 min", color:T.lime   },
+    { time:"7:00 PM",  title:"Yoga Flow",               sub:"Mobility & Flex · Day 4",  dur:"40 min", color:T.purple },
+  ],
+  Thu: [
+    { time:"6:00 AM",  title:"Morning Mobility Flow",  sub:"15-min warm-up · Full body",         dur:"15 min", color:T.lime   },
+    { time:"7:00 AM",  title:"Chest & Triceps — Hypertrophy A", sub:"Power Hypertrophy · Day 18", dur:"55 min", color:T.accent },
+    { time:"12:00 PM", title:"Zone 2 Walk",             sub:"Active recovery",                    dur:"30 min", color:T.blue   },
+    { time:"9:00 PM",  title:"Evening Wind Down",       sub:"Sleep prep · Parasympathetic",       dur:"20 min", color:T.purple },
+  ],
+  Fri: [
+    { time:"7:00 AM",  title:"Shoulders & Arms",       sub:"Hypertrophy · Day 19", dur:"55 min", color:T.accent },
+  ],
+  Sat: [],
+  Sun: [
+    { time:"10:00 AM", title:"Active Rest Day",        sub:"Light walk or yoga",   dur:"30 min", color:T.lime },
+  ],
+};
+
+const FEATURES = [
+  { icon:"🎯", title:"Smart Goals",        desc:"AI-powered goal setting that adapts to your progress and lifestyle in real time." },
+  { icon:"📊", title:"Progress Analytics", desc:"Deep insights into strength gains, body composition, and recovery trends over time." },
+  { icon:"🥦", title:"Nutrition Engine",   desc:"Auto-calculated macros, smart meal suggestions, and a 10,000+ food database." },
+  { icon:"🤝", title:"Community",          desc:"Challenges, leaderboards, and accountability partners to keep you motivated." },
+];
+
+// ── Hooks ─────────────────────────────────────────────────────────────────────
+function useAnimatedNumber(target, duration = 1200, delay = 0) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const start = performance.now();
+      const tick = (now) => {
+        const p = Math.min((now - start) / duration, 1);
+        const e = 1 - Math.pow(1 - p, 3);
+        setValue(Math.round(e * target));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [target, duration, delay]);
+  return value;
+}
+
+function useInView(threshold = 0.2) {
+  const ref = useRef(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setInView(true); obs.disconnect(); } }, { threshold });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [threshold]);
+  return [ref, inView];
+}
+
+// ── Micro Components ──────────────────────────────────────────────────────────
+function AnimatedBar({ pct, color, delay = 0, height = 4 }) {
+  const [ref, inView] = useInView();
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    if (!inView) return;
+    const t = setTimeout(() => setW(pct), delay);
+    return () => clearTimeout(t);
+  }, [inView, pct, delay]);
+  return (
+    <div ref={ref} style={{ height, background: "#1e1e1e", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${w}%`, background: color, borderRadius: 99, transition: "width 1.2s cubic-bezier(0.4,0,0.2,1)" }} />
+    </div>
+  );
+}
+
+function RingSVG({ pct, size = 96, strokeWidth = 10, color = T.lime, label }) {
+  const r = (size - strokeWidth) / 2;
+  const circ = 2 * Math.PI * r;
+  const [offset, setOffset] = useState(circ);
+  const [ref, inView] = useInView();
+  useEffect(() => {
+    if (!inView) return;
+    const t = setTimeout(() => setOffset(circ * (1 - pct / 100)), 150);
+    return () => clearTimeout(t);
+  }, [inView, pct, circ]);
+  return (
+    <svg ref={ref} width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1e1e1e" strokeWidth={strokeWidth} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth}
+        strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
+        transform={`rotate(-90 ${size/2} ${size/2})`}
+        style={{ transition: "stroke-dashoffset 1.4s cubic-bezier(0.4,0,0.2,1)" }} />
+      <text x={size/2} y={size/2 - 6} textAnchor="middle" fill={T.text} fontFamily={T.font} fontSize="18" fontWeight="700">{pct}%</text>
+      {label && <text x={size/2} y={size/2 + 12} textAnchor="middle" fill={T.muted} fontFamily={T.body} fontSize="10">{label}</text>}
+    </svg>
+  );
+}
+
+function Toast({ message, type, onDone }) {
+  const colors = { success: T.lime, info: T.blue, warn: T.accent };
+  useEffect(() => { const t = setTimeout(onDone, 3200); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div style={{
+      position: "fixed", bottom: 28, right: 28, zIndex: 9999,
+      background: T.card, border: `0.5px solid ${T.border}`,
+      borderLeft: `3px solid ${colors[type] || T.blue}`,
+      borderRadius: 8, padding: "14px 20px", fontSize: 13, color: T.text,
+      animation: "slideToast 0.3s ease", maxWidth: 320,
+    }}>
+      {message}
+      <style>{`@keyframes slideToast{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}`}</style>
+    </div>
+  );
+}
+
+function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const add = useCallback((msg, type = "info") => {
+    const id = Date.now();
+    setToasts(t => [...t, { id, msg, type }]);
+  }, []);
+  const remove = useCallback((id) => setToasts(t => t.filter(x => x.id !== id)), []);
+  const Toasts = () => toasts.map(t => <Toast key={t.id} message={t.msg} type={t.type} onDone={() => remove(t.id)} />);
+  return [add, Toasts];
+}
+
+// ── Section: Navbar ───────────────────────────────────────────────────────────
+function Navbar({ active, setActive, toast }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const links = ["Dashboard","Workouts","Nutrition","Schedule","Features"];
+  return (
+    <>
+      <nav style={{
+        display:"flex", alignItems:"center", justifyContent:"space-between",
+        padding:"18px 48px", borderBottom:`0.5px solid ${T.border}`,
+        position:"sticky", top:0, background:"rgba(10,10,10,0.96)",
+        backdropFilter:"blur(16px)", zIndex:100,
+      }}>
+        <span style={{ fontFamily:T.font, fontWeight:900, fontSize:22, color:T.lime, letterSpacing:"0.06em", textTransform:"uppercase" }}>
+          ⚡ VitalForm
+        </span>
+        <ul style={{ display:"flex", gap:32, listStyle:"none", margin:0, padding:0, "@media(max-width:768px)":{display:"none"} }}>
+          {links.map(l => (
+            <li key={l}>
+              <button onClick={() => setActive(l)} style={{
+                background:"none", border:"none", cursor:"pointer",
+                fontSize:13, letterSpacing:"0.04em",
+                color: active === l ? T.lime : T.muted,
+                fontFamily:T.body, transition:"color 0.2s",
+              }}>{l}</button>
+            </li>
+          ))}
+        </ul>
+        <button onClick={() => toast("Welcome! Sign-up coming soon 🚀","success")} style={{
+          background:T.lime, color:T.dark, fontFamily:T.font, fontWeight:700,
+          fontSize:13, letterSpacing:"0.08em", textTransform:"uppercase",
+          padding:"9px 20px", border:"none", borderRadius:4, cursor:"pointer",
+        }}>Start Training</button>
+      </nav>
+    </>
+  );
+}
+
+// ── Section: Hero ─────────────────────────────────────────────────────────────
+function Hero({ toast }) {
+  const calNum  = useAnimatedNumber(STATS.calories, 1400, 300);
+  const stepNum = useAnimatedNumber(STATS.steps, 1100, 500);
+  const [ref, inView] = useInView(0.1);
+
+  const miniCards = [
+    { val: `${STATS.activeMin}`, unit:" min",  label:"Active time", color:T.lime   },
+    { val: stepNum.toLocaleString(), unit:"", label:"Steps today", color:T.accent },
+    { val: `${STATS.hr}`,        unit:" bpm",  label:"Resting HR",  color:T.blue   },
+    { val: `${STATS.sleep}`,     unit:" hrs",  label:"Sleep",       color:T.purple },
+  ];
+
+  return (
+    <section ref={ref} style={{
+      display:"grid", gridTemplateColumns:"1fr 1fr", gap:56,
+      padding:"72px 48px 56px", maxWidth:1200, margin:"0 auto",
+      opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(24px)",
+      transition:"opacity 0.6s ease, transform 0.6s ease",
+    }}>
+      {/* Left */}
+      <div>
+        <span style={{ display:"block", fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", color:T.accent, marginBottom:16, fontFamily:T.body }}>
+          Week {USER.week} · {USER.phase}
+        </span>
+        <h1 style={{ fontFamily:T.font, fontWeight:900, fontSize:88, lineHeight:0.9, textTransform:"uppercase", letterSpacing:"-0.01em", marginBottom:28 }}>
+          BUILD<br/>YOUR<br/><span style={{ color:T.lime }}>BEST</span><br/>BODY.
+        </h1>
+        <p style={{ fontSize:15, fontWeight:300, color:T.muted, lineHeight:1.75, maxWidth:400, marginBottom:36, fontFamily:T.body }}>
+          Personalized workouts, smart nutrition tracking, and recovery insights — all in one platform built for real results.
+        </p>
+        <div style={{ display:"flex", gap:14, alignItems:"center" }}>
+          <button onClick={() => toast("Opening today's workout 💪","success")} style={{
+            background:T.lime, color:T.dark, fontFamily:T.font, fontWeight:700,
+            fontSize:14, letterSpacing:"0.08em", textTransform:"uppercase",
+            padding:"14px 30px", border:"none", borderRadius:4, cursor:"pointer",
+          }}>Today's Workout →</button>
+          <button onClick={() => toast("Video intro coming soon 🎬","info")} style={{
+            background:"none", border:"none", color:T.muted, fontSize:13,
+            display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontFamily:T.body,
+          }}>
+            <span style={{ width:32, height:32, borderRadius:"50%", border:`0.5px solid #444`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10 }}>▶</span>
+            Watch intro
+          </button>
+        </div>
+      </div>
+
+      {/* Right */}
+      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+        {/* Main stat card */}
+        <div style={{ background:T.card, border:`0.5px solid ${T.border}`, borderRadius:14, padding:28, display:"flex", alignItems:"center", gap:24 }}>
+          <RingSVG pct={STATS.goalPct} size={96} label="Goal" />
+          <div>
+            <div style={{ fontFamily:T.font, fontWeight:700, fontSize:38, color:T.lime, lineHeight:1 }}>
+              {calNum.toLocaleString()}
+            </div>
+            <div style={{ fontSize:13, color:T.muted, marginTop:4, fontFamily:T.body }}>Calories burned today</div>
+            <AnimatedBar pct={STATS.goalPct} color={T.lime} delay={200} height={4} />
+            <div style={{ fontSize:11, color:"#444", marginTop:8, fontFamily:T.body }}>Target: {STATS.calTarget.toLocaleString()} kcal</div>
+          </div>
+        </div>
+        {/* Mini cards */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+          {miniCards.map((c,i) => (
+            <div key={i} style={{ background:T.card, border:`0.5px solid ${T.border}`, borderRadius:12, padding:18 }}>
+              <div style={{ fontFamily:T.font, fontWeight:700, fontSize:30, display:"flex", alignItems:"baseline", gap:2 }}>
+                {c.val}<span style={{ fontSize:13, color:T.muted, fontFamily:T.body, fontWeight:300 }}>{c.unit}</span>
+              </div>
+              <div style={{ fontSize:11, color:T.muted, marginTop:4, display:"flex", alignItems:"center", gap:5, fontFamily:T.body }}>
+                <span style={{ width:6, height:6, borderRadius:"50%", background:c.color, display:"inline-block" }} />
+                {c.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Section: Programs ─────────────────────────────────────────────────────────
+function Programs({ toast }) {
+  const [filter, setFilter] = useState("active");
+  const [ref, inView] = useInView(0.1);
+  const tabs = ["active","all","completed"];
+  const filtered = PROGRAMS.filter(p => filter === "all" ? true : p.status === filter);
+
+  return (
+    <section ref={ref} id="programs" style={{
+      padding:"56px 0", maxWidth:1200, margin:"0 auto", padding:"56px 48px",
+      opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(24px)",
+      transition:"opacity 0.6s ease 0.1s, transform 0.6s ease 0.1s",
+    }}>
+      <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginBottom:28 }}>
+        <h2 style={{ fontFamily:T.font, fontWeight:900, fontSize:44, textTransform:"uppercase" }}>Your Programs</h2>
+        <div style={{ display:"flex", gap:6 }}>
+          {tabs.map(t => (
+            <button key={t} onClick={() => setFilter(t)} style={{
+              fontSize:12, letterSpacing:"0.06em", textTransform:"capitalize",
+              padding:"8px 16px", border:`0.5px solid ${filter===t ? T.lime : "#333"}`,
+              borderRadius:4, cursor:"pointer", fontFamily:T.body,
+              background: filter===t ? T.lime : "transparent",
+              color: filter===t ? T.dark : T.muted,
+              transition:"all 0.2s",
+            }}>{t}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:18 }}>
+        {filtered.length === 0 && (
+          <p style={{ color:T.muted, fontSize:14, padding:"40px 0", fontFamily:T.body }}>No programs found.</p>
+        )}
+        {filtered.map((p,i) => {
+          const pct = Math.round((p.day/p.total)*100);
+          return (
+            <ProgramCard key={p.id} p={p} pct={pct} delay={i*80} toast={toast} />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ProgramCard({ p, pct, delay, toast }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onClick={() => toast(`Opening "${p.name}" — Day ${p.day} 💪`, "success")}
+      style={{
+        background: T.card, borderRadius:14,
+        border:`0.5px solid ${p.featured ? p.color : hover ? "#444" : T.border}`,
+        overflow:"hidden", cursor:"pointer",
+        transform: hover ? "translateY(-3px)" : "none",
+        transition:"transform 0.25s, border-color 0.2s",
+      }}>
+      <div style={{ height:156, background:p.bg, display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+        <span style={{ fontSize:44 }}>{p.icon}</span>
+        {p.featured && (
+          <span style={{
+            position:"absolute", top:12, right:12, fontSize:9, fontWeight:700,
+            letterSpacing:"0.1em", textTransform:"uppercase",
+            padding:"4px 10px", borderRadius:3, background:p.color, color:T.dark, fontFamily:T.body,
+          }}>Active</span>
+        )}
+        <span style={{ position:"absolute", bottom:10, left:12, fontFamily:T.font, fontSize:13, color:"rgba(255,255,255,0.4)" }}>{pct}%</span>
+      </div>
+      <div style={{ padding:18 }}>
+        <h4 style={{ fontFamily:T.font, fontWeight:700, fontSize:22, textTransform:"uppercase", letterSpacing:"0.03em", marginBottom:6 }}>{p.name}</h4>
+        <div style={{ fontSize:12, color:T.muted, display:"flex", gap:14, marginBottom:14, fontFamily:T.body }}>
+          <span>Day {p.day} of {p.total}</span><span>{p.freq}</span>
+        </div>
+        <AnimatedBar pct={pct} color={p.color} delay={200} height={3} />
+      </div>
+    </div>
+  );
+}
+
+// ── Section: Nutrition ────────────────────────────────────────────────────────
+function Nutrition({ toast }) {
+  const [meals, setMeals] = useState(MEALS_INIT);
+  const totalCal  = meals.reduce((s,m) => s+m.cal, 0);
+  const remaining = 2800 - totalCal;
+
+  function addMeal() {
+    const s = MEAL_SUGGESTIONS[Math.floor(Math.random()*MEAL_SUGGESTIONS.length)];
+    const m = { ...s, id: Date.now() };
+    setMeals(prev => [...prev, m]);
+    toast(`Added "${m.name}" — ${m.cal} kcal ✅`, "success");
+  }
+
+  return (
+    <section id="nutrition" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", borderTop:`0.5px solid ${T.border}`, borderBottom:`0.5px solid ${T.border}` }}>
+      {/* Left — Macros */}
+      <div style={{ padding:"56px 48px", borderRight:`0.5px solid ${T.border}` }}>
+        <span style={{ display:"block", fontSize:11, letterSpacing:"0.14em", textTransform:"uppercase", color:T.accent, marginBottom:10, fontFamily:T.body }}>Nutrition Tracker</span>
+        <h2 style={{ fontFamily:T.font, fontWeight:900, fontSize:44, textTransform:"uppercase", lineHeight:1, marginBottom:16 }}>Today's<br/>Fueling</h2>
+        <p style={{ fontSize:14, color:T.muted, fontWeight:300, lineHeight:1.7, fontFamily:T.body }}>
+          <span style={{ color:T.lime }}>{totalCal.toLocaleString()}</span> of 2,800 kcal consumed. {totalCal < 2800 ? "You're on track for your surplus goal." : "Goal reached!"}
+        </p>
+        <div style={{ marginTop:28, display:"flex", flexDirection:"column", gap:14 }}>
+          {MACROS.map((m,i) => {
+            const p = Math.round((m.current/m.target)*100);
+            return (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:14 }}>
+                <span style={{ fontSize:13, color:T.muted, width:70, flexShrink:0, fontFamily:T.body }}>{m.name}</span>
+                <div style={{ flex:1 }}><AnimatedBar pct={p} color={m.color} delay={i*100} height={6} /></div>
+                <span style={{ fontSize:13, fontWeight:500, width:48, textAlign:"right", fontFamily:T.body }}>{m.current}g</span>
+              </div>
+            );
+          })}
+        </div>
+        {/* Calorie ring */}
+        <div style={{ marginTop:32, display:"flex", alignItems:"center", gap:20 }}>
+          <RingSVG pct={Math.min(100,Math.round((totalCal/2800)*100))} size={80} color={T.lime} label="kcal" />
+          <div>
+            <div style={{ fontFamily:T.font, fontWeight:700, fontSize:28, color:T.lime }}>{totalCal.toLocaleString()}</div>
+            <div style={{ fontSize:12, color:T.muted, fontFamily:T.body }}>of 2,800 target</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right — Meals */}
+      <div style={{ padding:"56px 48px" }}>
+        <span style={{ display:"block", fontSize:11, letterSpacing:"0.14em", textTransform:"uppercase", color:T.accent, marginBottom:18, fontFamily:T.body }}>Today's Meals</span>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {meals.map(m => (
+            <div key={m.id} onClick={() => toast(`${m.name} — ${m.cal} kcal 🍽️`, "info")}
+              style={{
+                background:T.card, border:`0.5px solid ${T.border}`, borderRadius:12,
+                padding:"16px 18px", display:"flex", alignItems:"center", gap:14, cursor:"pointer",
+              }}>
+              <div style={{ fontSize:22, width:46, height:46, display:"flex", alignItems:"center", justifyContent:"center", background:"#1e1e1e", borderRadius:10, flexShrink:0 }}>{m.icon}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:500, marginBottom:3, fontFamily:T.body }}>{m.name}</div>
+                <div style={{ fontSize:12, color:T.muted, fontFamily:T.body }}>{m.meal} · {m.time}</div>
+              </div>
+              <div style={{ fontFamily:T.font, fontWeight:700, fontSize:22, color:T.lime }}>{m.cal}</div>
+            </div>
+          ))}
+
+          {/* Add card */}
+          <div onClick={addMeal} style={{
+            background:T.card, border:`0.5px dashed #333`, borderRadius:12,
+            padding:"16px 18px", display:"flex", alignItems:"center", gap:14, cursor:"pointer",
+          }}>
+            <div style={{ fontSize:22, width:46, height:46, display:"flex", alignItems:"center", justifyContent:"center", borderRadius:10, color:T.muted, flexShrink:0 }}>+</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, color:T.muted, marginBottom:3, fontFamily:T.body }}>Log a meal</div>
+              <div style={{ fontSize:12, color:"#444", fontFamily:T.body }}>Tap to add or get a suggestion</div>
+            </div>
+            <div style={{ fontSize:13, color:T.muted, fontFamily:T.body }}>~{remaining > 0 ? remaining.toLocaleString() : 0} left</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Section: Schedule ─────────────────────────────────────────────────────────
+function Schedule({ toast }) {
+  const [activeDay, setActiveDay] = useState("Thu");
+  const [ref, inView] = useInView(0.1);
+  const items = SCHEDULE[activeDay] || [];
+
+  return (
+    <section ref={ref} id="schedule" style={{
+      padding:"56px 48px", maxWidth:1200, margin:"0 auto",
+      opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(24px)",
+      transition:"opacity 0.6s ease, transform 0.6s ease",
+    }}>
+      <span style={{ display:"block", fontSize:11, letterSpacing:"0.14em", textTransform:"uppercase", color:T.accent, marginBottom:10, fontFamily:T.body }}>Weekly Schedule</span>
+      <h2 style={{ fontFamily:T.font, fontWeight:900, fontSize:44, textTransform:"uppercase", marginBottom:0 }}>This Week</h2>
+
+      {/* Day strip */}
+      <div style={{ display:"flex", gap:10, margin:"22px 0 28px" }}>
+        {WEEK.map(d => (
+          <button key={d.day} onClick={() => setActiveDay(d.day)} style={{
+            flex:1, textAlign:"center", padding:"12px 6px", borderRadius:10, cursor:"pointer",
+            border:`0.5px solid ${activeDay===d.day ? T.lime : T.border}`,
+            background: activeDay===d.day ? T.lime : "transparent",
+            transition:"all 0.2s", position:"relative",
+          }}>
+            <span style={{ display:"block", fontSize:10, color: activeDay===d.day ? "#555" : T.muted, letterSpacing:"0.06em", textTransform:"uppercase", marginBottom:4, fontFamily:T.body }}>{d.day}</span>
+            <span style={{ fontFamily:T.font, fontWeight:700, fontSize:22, color: activeDay===d.day ? T.dark : T.text }}>{d.num}</span>
+            {d.events > 0 && activeDay !== d.day && (
+              <span style={{ display:"block", width:4, height:4, borderRadius:"50%", background:T.accent, margin:"5px auto 0" }} />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Agenda */}
+      {items.length === 0 ? (
+        <div style={{ textAlign:"center", padding:"48px 0", color:T.muted }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>😴</div>
+          <p style={{ fontSize:14, fontFamily:T.body }}>Rest day — no sessions scheduled.</p>
+          <button onClick={() => toast("Session builder coming soon!", "info")} style={{
+            marginTop:16, background:T.lime, color:T.dark, fontFamily:T.font, fontWeight:700,
+            fontSize:12, textTransform:"uppercase", padding:"10px 20px", border:"none", borderRadius:4, cursor:"pointer", letterSpacing:"0.06em",
+          }}>Add Session +</button>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {items.map((item,i) => (
+            <div key={i} onClick={() => toast(`Starting "${item.title}" 🔥`, "success")}
+              style={{
+                background:T.card, border:`0.5px solid ${T.border}`, borderRadius:12,
+                padding:"16px 20px", display:"flex", alignItems:"center", gap:18, cursor:"pointer",
+                animation:`slideIn 0.35s ease ${i*80}ms both`,
+              }}>
+              <div style={{ fontSize:12, color:T.muted, width:62, flexShrink:0, fontFamily:T.body }}>{item.time}</div>
+              <div style={{ width:3, height:40, background:item.color, borderRadius:2, flexShrink:0 }} />
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:500, marginBottom:3, fontFamily:T.body }}>{item.title}</div>
+                <div style={{ fontSize:12, color:T.muted, fontFamily:T.body }}>{item.sub}</div>
+              </div>
+              <div style={{ fontSize:12, color:T.muted, fontStyle:"italic", fontFamily:T.body }}>{item.dur}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <style>{`@keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}`}</style>
+    </section>
+  );
+}
+
+// ── Section: Features ─────────────────────────────────────────────────────────
+function Features() {
+  const [ref, inView] = useInView(0.1);
+  return (
+    <section ref={ref} id="features" style={{
+      background:T.card, borderTop:`0.5px solid ${T.border}`, borderBottom:`0.5px solid ${T.border}`,
+      padding:"56px 48px",
+      opacity: inView ? 1 : 0, transition:"opacity 0.6s ease",
+    }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:40, maxWidth:1200, margin:"0 auto" }}>
+        {FEATURES.map((f,i) => (
+          <div key={i}>
+            <div style={{ fontSize:28, width:52, height:52, display:"flex", alignItems:"center", justifyContent:"center", background:"#1e1e1e", borderRadius:12, marginBottom:14 }}>{f.icon}</div>
+            <h4 style={{ fontFamily:T.font, fontWeight:700, fontSize:18, textTransform:"uppercase", letterSpacing:"0.03em", marginBottom:8 }}>{f.title}</h4>
+            <p style={{ fontSize:13, color:T.muted, lineHeight:1.65, fontWeight:300, fontFamily:T.body }}>{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ── Section: Progress Chart ───────────────────────────────────────────────────
+function ProgressChart({ toast }) {
+  const [ref, inView] = useInView(0.1);
+  const weeks = ["W1","W2","W3","W4","W5","W6"];
+  const weights = [84.2, 83.8, 83.1, 82.5, 82.0, 81.4];
+  const lifts   = [100, 107, 112, 115, 120, 125];
+  const [showWeight, setShowWeight] = useState(true);
+  const data = showWeight ? weights : lifts;
+  const min = Math.min(...data) - 1;
+  const max = Math.max(...data) + 1;
+  const W = 560, H = 160, pad = { l:40, r:20, t:16, b:30 };
+  const gW = W - pad.l - pad.r;
+  const gH = H - pad.t - pad.b;
+  const scaleY = v => pad.t + gH - ((v - min) / (max - min)) * gH;
+  const scaleX = i => pad.l + (i / (data.length-1)) * gW;
+  const pts = data.map((v,i) => `${scaleX(i)},${scaleY(v)}`).join(" ");
+  const pathD = data.map((v,i) => `${i===0?"M":"L"}${scaleX(i)} ${scaleY(v)}`).join(" ");
+
+  return (
+    <section ref={ref} style={{
+      padding:"56px 48px", maxWidth:1200, margin:"0 auto",
+      opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(24px)",
+      transition:"opacity 0.6s ease, transform 0.6s ease",
+    }}>
+      <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", marginBottom:24 }}>
+        <div>
+          <span style={{ display:"block", fontSize:11, letterSpacing:"0.14em", textTransform:"uppercase", color:T.accent, marginBottom:6, fontFamily:T.body }}>6-Week Progress</span>
+          <h2 style={{ fontFamily:T.font, fontWeight:900, fontSize:44, textTransform:"uppercase" }}>Your Gains</h2>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          {["Weight (kg)","Bench (kg)"].map((l,i) => (
+            <button key={i} onClick={() => setShowWeight(i===0)} style={{
+              fontSize:12, letterSpacing:"0.06em", padding:"7px 14px",
+              border:`0.5px solid ${(showWeight&&i===0)||(!showWeight&&i===1) ? T.lime : "#333"}`,
+              borderRadius:4, cursor:"pointer", fontFamily:T.body,
+              background:(showWeight&&i===0)||(!showWeight&&i===1) ? T.lime : "transparent",
+              color:(showWeight&&i===0)||(!showWeight&&i===1) ? T.dark : T.muted,
+              transition:"all 0.2s",
+            }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ background:T.card, border:`0.5px solid ${T.border}`, borderRadius:14, padding:"24px 24px 8px", overflow:"hidden" }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display:"block" }}>
+          {/* Grid lines */}
+          {[0,0.25,0.5,0.75,1].map(t => {
+            const y = pad.t + t * gH;
+            const v = (max - t*(max-min)).toFixed(1);
+            return (
+              <g key={t}>
+                <line x1={pad.l} y1={y} x2={W-pad.r} y2={y} stroke={T.border} strokeWidth="0.5" />
+                <text x={pad.l-6} y={y+4} textAnchor="end" fill={T.muted} fontSize="9" fontFamily={T.body}>{v}</text>
+              </g>
+            );
+          })}
+          {/* X labels */}
+          {weeks.map((w,i) => (
+            <text key={i} x={scaleX(i)} y={H-6} textAnchor="middle" fill={T.muted} fontSize="10" fontFamily={T.body}>{w}</text>
+          ))}
+          {/* Area fill */}
+          <path d={`${pathD} L${scaleX(data.length-1)} ${H-pad.b} L${pad.l} ${H-pad.b} Z`}
+            fill={showWeight ? T.lime : T.blue} opacity="0.06" />
+          {/* Line */}
+          <path d={pathD} fill="none" stroke={showWeight ? T.lime : T.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Dots */}
+          {data.map((v,i) => (
+            <circle key={i} cx={scaleX(i)} cy={scaleY(v)} r="4" fill={showWeight ? T.lime : T.blue} />
+          ))}
+        </svg>
+
+        {/* Stat row */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:1, borderTop:`0.5px solid ${T.border}`, marginTop:8 }}>
+          {[
+            { label:"Start",  val: `${data[0]}${showWeight?" kg":" kg"}` },
+            { label:"Current",val: `${data[data.length-1]}${showWeight?" kg":" kg"}` },
+            { label:"Change", val: `${showWeight ? "−" : "+"}${Math.abs(data[data.length-1]-data[0]).toFixed(1)} kg` },
+          ].map((s,i) => (
+            <div key={i} style={{ padding:"14px 16px", borderRight: i<2 ? `0.5px solid ${T.border}` : "none" }}>
+              <div style={{ fontSize:11, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:4, fontFamily:T.body }}>{s.label}</div>
+              <div style={{ fontFamily:T.font, fontWeight:700, fontSize:24, color: i===2 ? T.lime : T.text }}>{s.val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Section: Footer ───────────────────────────────────────────────────────────
+function Footer({ toast }) {
+  return (
+    <footer style={{
+      background:T.card, borderTop:`0.5px solid ${T.border}`,
+      padding:"28px 48px", display:"flex", alignItems:"center", justifyContent:"space-between",
+    }}>
+      <p style={{ fontSize:12, color:T.muted, fontFamily:T.body }}>© 2026 VitalForm · Week {USER.week} of your 12-week transformation</p>
+      <div style={{ display:"flex", alignItems:"center", gap:8, background:T.card2, border:`0.5px solid #333`, borderRadius:8, padding:"10px 16px" }}>
+        <span style={{ fontSize:18 }}>🔥</span>
+        <span style={{ fontFamily:T.font, fontWeight:700, fontSize:22, color:T.accent }}>{USER.streak}</span>
+        <span style={{ fontSize:12, color:T.muted, fontFamily:T.body }}>day streak</span>
+      </div>
+      <button onClick={() => toast("Full analytics dashboard coming soon 📊","info")} style={{
+        background:T.lime, color:T.dark, fontFamily:T.font, fontWeight:700,
+        fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase",
+        padding:"10px 20px", border:"none", borderRadius:4, cursor:"pointer",
+      }}>View Full Progress →</button>
+    </footer>
+  );
+}
+
+// ── Root App ──────────────────────────────────────────────────────────────────
+export default function App() {
+  const [activeNav, setActiveNav] = useState("Dashboard");
+  const [addToast, Toasts] = useToast();
+
+  return (
+    <div style={{ background:T.dark, color:T.text, minHeight:"100vh", fontFamily:T.body }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body { background: #0A0A0A; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0A0A0A; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        button:focus-visible { outline: 2px solid #C8F135; outline-offset: 2px; }
+        @media (max-width: 900px) {
+          .hero-grid { grid-template-columns: 1fr !important; padding: 48px 24px 40px !important; gap: 36px !important; }
+          .split-section { grid-template-columns: 1fr !important; }
+          .programs-grid { grid-template-columns: 1fr !important; }
+          .features-grid { grid-template-columns: 1fr 1fr !important; }
+          h1 { font-size: 60px !important; }
+          nav { padding: 16px 24px !important; }
+        }
+      `}</style>
+
+      <Navbar active={activeNav} setActive={setActiveNav} toast={addToast} />
+
+      <main>
+        <Hero    toast={addToast} />
+        <Programs toast={addToast} />
+        <Nutrition toast={addToast} />
+        <Schedule toast={addToast} />
+        <ProgressChart toast={addToast} />
+        <Features />
+      </main>
+
+      <Footer toast={addToast} />
+      <Toasts />
+    </div>
+  );
+}
